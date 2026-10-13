@@ -91,7 +91,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ---------------------------------------------------------------
-  # Stage 6 (CD) + Stage 7 (running app): deploy the exact image built above to Render.
+  # Stage 6 (CD) + Stage 7 (running app): deploy this commit to Render.
+  # The Render service is repo-backed, so we deploy the commit (ref),
+  # not an image (imgURL).
+  # ---------------------------------------------------------------
   deploy:
     name: Deploy to Render
     needs: docker
@@ -111,12 +114,11 @@ jobs:
             exit 1
           fi
 
-      - name: Deploy the image built by this workflow
+      - name: Trigger Render deployment for this commit
         run: |
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA::7}"
-          echo "Triggering Render deployment for $IMAGE"
-          curl --fail --show-error --silent --get \
-            --data-urlencode "imgURL=$IMAGE" \
+          echo "Triggering Render deployment for commit ${GITHUB_SHA::7}"
+          curl --fail-with-body --show-error --silent --get \
+            --data-urlencode "ref=$GITHUB_SHA" \
             "$RENDER_DEPLOY_HOOK"
           echo
 
