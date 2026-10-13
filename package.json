@@ -1,0 +1,15 @@
+{
+  "name": "sprintboard",
+  "version": "1.0.0",
+  "description": "Agile sprint board (Kanban/Scrum) with an end-to-end DevOps pipeline",
+  "private": true,
+  "scripts": {
+    "lint": "node --check js/app.js && node --check assistant.js && node --check team.js && node --check team-server.js && node --check server.js",
+    "test": "node --test",
+    "start": "node server.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sprintboard – Agile task manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .assistant{position:fixed;right:1rem;bottom:1rem;z-index:20;font:inherit}.assistant-toggle{border:0;border-radius:999px;background:#245a3a;color:#fff;padding:.8rem 1.15rem;font:inherit;font-weight:700;box-shadow:0 5px 20px #172b2440;cursor:pointer}.assistant-body{width:min(390px,calc(100vw - 2rem));height:min(600px,calc(100vh - 6rem));background:#fff;border:1px solid #d5dbe3;border-radius:14px;box-shadow:0 12px 40px #172b2440;display:flex;flex-direction:column;padding:1rem;margin-bottom:.6rem}.assistant-body[hidden]{display:none}.assistant-body header{display:flex;justify-content:space-between;gap:.5rem;border-bottom:1px solid #e1e5ea;padding-bottom:.6rem}.assistant-body header p,.assistant-body small{font-size:.78rem;color:#5d6877;margin:.2rem 0}.assistant-messages{flex:1;overflow:auto;padding:.5rem 0}.assistant-messages>p{white-space:pre-wrap;line-height:1.45}.assistant-user{background:#eaf1ec;border-radius:10px;padding:.55rem}.assistant-reply{padding:.2rem}.assistant-error{color:#a12b20}.assistant-note{color:#216e39}.assistant-hint{font-size:.88rem;color:#5d6877}.assistant-body form{display:flex;gap:.5rem;align-items:flex-end}.assistant-body textarea{min-width:0;flex:1;resize:vertical;border:1px solid #cdd4dc;border-radius:8px;padding:.6rem;font:inherit}.assistant-body small{margin-top:.6rem}.ai-proposal{border:1px solid #d5dbe3;border-radius:8px;padding:.65rem;margin:.6rem 0}.ai-proposal pre{max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.75rem;background:#f5f7f8;padding:.5rem;border-radius:5px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @media(max-width:520px){.assistant{right:.5rem;bottom:.5rem}.assistant-body{height:min(70vh,560px)}}
+  </style>
+  <link rel="stylesheet" href="enhancements.css">
+  <link rel="stylesheet" href="team.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 class="brand">Sprintboard</h1>
+    <nav class="tabs" aria-label="Views">
+      <button class="tab" data-view="backlog">Backlog</button>
+      <button class="tab" data-view="board">Sprint board</button>
+      <button class="tab" data-view="sprints">Sprints</button>
+    </nav>
+    <button class="btn primary" id="new-story">New user story</button>
+  </header>
+
+  <main>
+    <section id="view-backlog" class="view"></section>
+    <section id="view-board" class="view" hidden></section>
+    <section id="view-sprints" class="view" hidden></section>
+  </main>
+
+  <aside class="assistant" id="assistant" aria-label="Sprintboard AI assistant">
+    <button class="assistant-toggle" id="assistant-toggle" aria-expanded="false" aria-controls="assistant-body">Ask AI</button>
+    <div class="assistant-body" id="assistant-body" hidden>
+      <header><div><strong>Sprintboard assistant</strong><p>Ask questions or request an edit. Changes need your approval.</p></div><button class="link" id="assistant-close" aria-label="Close assistant">Close</button></header>
+      <div class="assistant-messages" id="assistant-messages" aria-live="polite"><p class="assistant-hint">I can explain your board, propose story changes, or edit allowlisted project files.</p></div>
+      <form id="assistant-form"><label class="sr-only" for="assistant-input">Message the assistant</label><textarea id="assistant-input" rows="3" maxlength="4000" placeholder="Ask a question or describe a change…" required></textarea><button class="btn primary" type="submit">Send</button></form>
+      <small>Your board data and requested project file context are sent to Groq. The API key stays on the server.</small>
+    </div>
+  </aside>
+
+  <footer class="footer">
+    <span>Data is saved in this browser (localStorage).</span>
+    <span id="build-info"></span>
+    <button class="link" id="load-sample">Load sample data</button>
+    <button class="link" id="export-json">Export JSON</button>
+    <button class="link danger" id="reset-all">Delete everything</button>
+  </footer>
+
+  <dialog id="story-dialog">
+    <form id="story-form" novalidate>
+      <h2 id="story-dialog-title">New user story</h2>
+      <label>Title
+        <input name="title" required maxlength="80" placeholder="Short name, e.g. Reset password by email">
+      </label>
+      <fieldset>
+        <legend>User story</legend>
+        <label>As a <input name="who" maxlength="60" placeholder="registered user"></label>
+        <label>I want to <input name="want" maxlength="120" placeholder="reset my password by email"></label>
+        <label>So that <input name="why" maxlength="120" placeholder="I can get back into my account"></label>
+      </fieldset>
+      <div class="row">
+        <label>Story points
+          <select name="points"></select>
+        </label>
+        <label>Priority
+          <select name="priority">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </label>
+      </div>
+      <p class="error" id="story-error" hidden>Add a title before saving.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn danger" id="story-delete" hidden>Delete story</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="story-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Save story</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sprint-dialog">
+    <form id="sprint-form" novalidate>
+      <h2>New sprint</h2>
+      <label>Sprint name
+        <input name="name" required maxlength="40">
+      </label>
+      <label>Sprint goal
+        <input name="goal" maxlength="120" placeholder="What should be true when this sprint ends?">
+      </label>
+      <div class="row">
+        <label>Start date <input type="date" name="start" required></label>
+        <label>End date <input type="date" name="end" required></label>
+      </div>
+      <p class="error" id="sprint-error" hidden></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="sprint-cancel">Cancel</button>
+        <button type="submit" class="btn primary">Create sprint</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/app.js"></script>
+  <script src="assistant.js"></script>
+  <script src="visual-enhancements.js"></script>
+  <script src="team.js"></script>
+</body>
+</html>

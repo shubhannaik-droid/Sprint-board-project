@@ -1,0 +1,24 @@
+# Run the app locally (or on a server) with one command:
+#   docker compose up -d --build
+services:
+  sprintboard:
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    image: sprintboard:local
+    container_name: sprintboard
+    environment:
+      PORT: 80
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+    volumes:
+      - .:/app
+      - sprintboard-data:/app/data
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+volumes:
+  sprintboard-data:
