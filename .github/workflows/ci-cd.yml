@@ -89,7 +89,7 @@ jobs:
       contents: read
     env:
       RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-      APP_URL: https://CHANGE-ME-TO-YOUR-NEW-SERVICE.onrender.com
+      APP_URL: https://sprint-board-project-latest.onrender.com
     steps:
       - name: Check deploy hook secret
         run: |
