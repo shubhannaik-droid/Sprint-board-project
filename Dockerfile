@@ -4,6 +4,7 @@ FROM node:22-alpine
 
 # Build metadata (set by the CI pipeline; defaults make local builds work too)
 ARG GIT_SHA=local
+ARG RENDER_GIT_COMMIT=          # CHANGED: new line, commit provided by Render
 ARG BUILD_DATE=unknown
 
 WORKDIR /app
@@ -13,10 +14,12 @@ COPY js/ ./js/
 ENV PORT=80
 
 # Record which commit this image was built from (shown in the app footer and /version.json)
-RUN printf '{"commit":"%s","built":"%s"}\n' "$GIT_SHA" "$BUILD_DATE" > version.json
+# CHANGED: prefer Render's commit, fall back to GIT_SHA from GitHub
+RUN printf '{"commit":"%s","built":"%s"}\n' "${RENDER_GIT_COMMIT:-$GIT_SHA}" "$BUILD_DATE" > version.json
 
+# CHANGED: same fallback for the label
 LABEL org.opencontainers.image.title="sprintboard" \
-      org.opencontainers.image.revision="$GIT_SHA" \
+      org.opencontainers.image.revision="${RENDER_GIT_COMMIT:-$GIT_SHA}" \
       org.opencontainers.image.created="$BUILD_DATE"
 
 EXPOSE 80
