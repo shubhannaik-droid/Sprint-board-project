@@ -91,12 +91,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ---------------------------------------------------------------
-  # Stage 6 (Continuous Deployment) + Stage 7 (check the running app)
-  # Deploys to your server over SSH. If the secrets below are not set,
-  # this job skips deployment instead of failing.
-  # ---------------------------------------------------------------
+  # Stage 6 (CD) + Stage 7 (running app): deploy the exact image built above to Render.
   deploy:
-    name: Deploy to server
+    name: Deploy to Render
     needs: docker
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -104,47 +101,38 @@ jobs:
     permissions:
       contents: read
     env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      GHCR_USER: ${{ github.actor }}
-      GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+      RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
     steps:
-      - name: Deploy container
+      - name: Check Render deployment settings
         run: |
-          if [ -z "$DEPLOY_HOST" ] || [ -z "$DEPLOY_USER" ] || [ -z "$DEPLOY_SSH_KEY" ]; then
-            echo "::notice::DEPLOY_HOST / DEPLOY_USER / DEPLOY_SSH_KEY not set - skipping deployment."
-            echo "SKIP_DEPLOY=true" >> "$GITHUB_ENV"
-            exit 0
+          if [ -z "$RENDER_DEPLOY_HOOK" ] || [ -z "$RENDER_APP_URL" ]; then
+            echo "::error::Add RENDER_DEPLOY_HOOK and RENDER_APP_URL in repository Actions secrets."
+            exit 1
           fi
-          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:latest"
-          mkdir -p ~/.ssh
-          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
-          chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          ssh -i ~/.ssh/id_deploy "$DEPLOY_USER@$DEPLOY_HOST" bash -s <<REMOTE
-            set -e
-            # a read-only token is only needed if the package is private
-            if [ -n "$GHCR_TOKEN" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-            fi
-            docker pull "$IMAGE"
-            docker rm -f sprintboard 2>/dev/null || true
-            docker run -d --name sprintboard --restart unless-stopped -p 80:80 "$IMAGE"
-          REMOTE
 
-      # Stage 7: confirm the new version is up and answering
-      - name: Smoke test the running app
-        if: env.SKIP_DEPLOY != 'true'
+      - name: Deploy the image built by this workflow
         run: |
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS --max-time 5 "http://$DEPLOY_HOST/health"; then
-              echo "App is healthy."
-              curl -fsS "http://$DEPLOY_HOST/version.json"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA::7}"
+          echo "Triggering Render deployment for $IMAGE"
+          curl --fail --show-error --silent --get \
+            --data-urlencode "imgURL=$IMAGE" \
+            "$RENDER_DEPLOY_HOOK"
+          echo
+
+      # Verify the new commit is live, not merely that the previous version answers.
+      - name: Smoke test the deployed app
+        run: |
+          for attempt in $(seq 1 36); do
+            HEALTH="$(curl -fsS --max-time 10 "$RENDER_APP_URL/health" 2>/dev/null || true)"
+            VERSION="$(curl -fsS --max-time 10 "$RENDER_APP_URL/version.json" 2>/dev/null || true)"
+            if [ "$HEALTH" = "ok" ] && echo "$VERSION" | grep -Fq "\"commit\":\"$GITHUB_SHA\""; then
+              echo "Deployed commit is healthy: $GITHUB_SHA"
+              echo "$VERSION"
               exit 0
             fi
-            echo "Not ready yet (attempt $i), waiting..."
-            sleep 5
+            echo "Waiting for commit $GITHUB_SHA to become healthy (attempt $attempt/36)..."
+            sleep 10
           done
-          echo "::error::Health check failed after deployment"
+          echo "::error::Render did not serve the expected healthy commit within 6 minutes."
           exit 1

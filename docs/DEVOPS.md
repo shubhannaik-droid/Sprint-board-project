@@ -1,84 +1,68 @@
 # DevOps pipeline for Sprintboard
 
-This project implements the end-to-end pipeline from the mini-project flowchart.
+This project follows the mini-project flowchart:
+
+**Development -> Git/GitHub -> CI -> Testing -> Docker -> CD -> Running application -> Monitoring & feedback -> Continuous improvement**
 
 ![Pipeline flowchart](pipeline-flowchart.png)
 
-**Flow:** Development → Git/GitHub → CI → Testing → Docker → CD → Running application → Monitoring & feedback → Continuous improvement
-
-## Where each stage lives in the repo
+## Where each stage lives
 
 | # | Stage | What happens | Files |
 |---|-------|--------------|-------|
-| 1 | Development | Edit the app, run it locally, run tests | `index.html`, `css/`, `js/app.js`, `package.json` (`npm start`, `npm test`) |
-| 2 | Version control (Git & GitHub) | Commit and push to GitHub; PRs use a checklist | `.gitignore`, `.github/pull_request_template.md` |
-| 3 | Continuous integration | GitHub Actions starts on every push / PR, installs dependencies, lints | `.github/workflows/ci-cd.yml` (job `build-and-test`) |
-| 4 | Automated testing | 9 tests drive the real UI in jsdom; a failing test stops the pipeline | `tests/app.test.js` |
-| 5 | Containerization (Docker) | Builds an nginx image, tags it (`sha-xxxxxxx`, `latest`), pushes to GitHub Container Registry | `Dockerfile`, `nginx/default.conf`, `.dockerignore`, job `docker` |
-| 6 | Continuous deployment | Pulls the new image on your server over SSH and restarts the container | job `deploy` |
-| 7 | Running application | Smoke test calls `/health` after deploy; app is served on port 80 | job `deploy` (step "Smoke test"), `scripts/healthcheck.sh` |
-| 8 | Monitoring & feedback | Health endpoint, Docker HEALTHCHECK, request logs, build info, feedback issue template | `nginx/default.conf`, `Dockerfile`, `.github/ISSUE_TEMPLATE/feedback.md` |
+| 1 | Development | Build the app and make changes locally | `index.html`, `css/`, `js/app.js` |
+| 2 | Version control | Commit and push changes to GitHub | Git and `.github/pull_request_template.md` |
+| 3 | Continuous integration | GitHub Actions installs dependencies and checks JavaScript syntax | `.github/workflows/ci-cd.yml`, job `build-and-test` |
+| 4 | Automated testing | The pipeline runs the Sprintboard UI tests; failure stops later jobs | `tests/app.test.js` |
+| 5 | Containerization | Build a Node Docker image, tag it with the commit, and publish it to GHCR | `Dockerfile`, job `docker` |
+| 6 | Continuous deployment | After tests and image publishing pass on `main`, trigger Render to deploy that commit's image | job `deploy` |
+| 7 | Running application | The pipeline checks `/health` and verifies `/version.json` reports the deployed commit | `server.js`, job `deploy` |
+| 8 | Monitoring & feedback | Check Render logs and health; turn reported issues into backlog stories | Render dashboard, `.github/ISSUE_TEMPLATE/feedback.md` |
 
-Feedback from stage 8 becomes new user stories in the Sprintboard backlog, which feeds stage 1 again.
+Feedback becomes new user stories in Sprintboard and starts the improvement cycle again.
 
-## 1. Run it locally
+## Run locally
 
-    npm install        # once
-    npm test           # stage 4 on your machine
-    npm start          # http://localhost:8000 (no Docker)
+```powershell
+npm ci
+npm run lint
+npm test
+npm start
+```
 
-With Docker:
+Open `http://localhost:8000`. To run the container locally instead:
 
-    docker compose up -d --build        # http://localhost:8080
-    scripts/healthcheck.sh              # checks /health, the home page, /version.json
-    docker logs -f sprintboard          # live request logs
-    docker ps                           # STATUS shows (healthy) or (unhealthy)
+```powershell
+docker compose up -d --build
+bash scripts/healthcheck.sh
+```
 
-## 2. Put it on GitHub
+The Docker Compose app is available at `http://localhost:8080`.
 
-    git init
-    git add .
-    git commit -m "Initial commit"
-    git branch -M main
-    git remote add origin https://github.com/<you>/sprintboard.git
-    git push -u origin main
+## GitHub Actions flow
 
-The first push triggers the pipeline. Open the **Actions** tab to watch the three jobs run.
+On pull requests, Actions installs dependencies, runs lint and tests, and builds the image without publishing it. On pushes to `main`, it runs those same checks, publishes the Docker image to GitHub Container Registry with a commit tag and `latest`, then deploys the commit-tagged image to Render. The final job waits for `/health` and checks that `/version.json` contains the current commit SHA.
 
-## 3. What happens on each push
+## Configure Render for the demo
 
-1. **build-and-test** installs dependencies with `npm ci`, runs `npm run lint` and `npm test`.
-2. **docker** (only if step 1 passed) builds the image. On pull requests it only builds; on `main` it also pushes to `ghcr.io/<you>/sprintboard` with the tags `sha-<commit>` and `latest`.
-3. **deploy** (only on `main`) connects to your server, pulls `latest`, restarts the container, then calls `/health` up to 6 times.
+1. In Render, create a **Web Service** and choose **Existing Image**. Enter `ghcr.io/shubhannaik-droid/sprint-board-project:latest`, choose the Free plan, and set the health check path to `/health`. Add the environment variable `PORT=10000` so the app listens on Render?s web-service port.
+2. Make the GHCR container package public so Render can pull it without registry credentials. In GitHub, open the package settings and change package visibility to public. The source repository can remain private.
+3. Copy the service?s **Deploy Hook** from Settings. Image-backed services do not auto-deploy when a registry tag changes; this workflow calls the hook only after CI, tests, and Docker publishing succeed.
+4. Copy the service?s public `https://...onrender.com` URL.
+5. In GitHub, open **Settings > Secrets and variables > Actions > New repository secret** and add:
 
-If any stage fails, later stages do not run. That is the point of the pipeline.
+   | Secret | Value |
+   |--------|-------|
+   | `RENDER_DEPLOY_HOOK` | Render service deploy hook URL |
+   | `RENDER_APP_URL` | Render service public URL, without a trailing slash |
 
-## 4. Turn on deployment (optional)
+6. Push a small change to `main`, then open **Actions > CI/CD**. Show CI/tests, Docker publishing, Render deployment, and the successful smoke test. Open the Render URL and show the app.
 
-Without these secrets the deploy job prints a notice and skips, so the pipeline stays green. To deploy to a real server (any Linux VM with Docker installed, e.g. an AWS EC2, Azure, or DigitalOcean machine):
+Never put secret values in the repository or in chat. A Render free web service may sleep when idle, so open the app before the presentation and allow time for it to wake up. Free service files are ephemeral; this project is a demonstration, not a production data store.
 
-Repository → Settings → Secrets and variables → Actions → New repository secret:
+## Monitoring and feedback
 
-| Secret | Value |
-|--------|-------|
-| `DEPLOY_HOST` | Server IP or hostname |
-| `DEPLOY_USER` | SSH user, e.g. `ubuntu` |
-| `DEPLOY_SSH_KEY` | Private key whose public half is in the server's `~/.ssh/authorized_keys` |
-| `GHCR_PULL_TOKEN` | Only if the package is private: a personal access token with `read:packages` |
-
-Also open port 80 in the server's firewall / security group. The job uses a GitHub *environment* named `production`, which you can protect with required reviewers if you want a manual approval before deploying.
-
-To use Docker Hub instead of GHCR, change the `login-action` registry and credentials and the `images:` value in the `docker` job.
-
-## 5. Monitoring & feedback
-
-- `GET /health` returns `ok` (used by Docker, the CD smoke test, and any uptime monitor such as UptimeRobot).
-- `GET /version.json` shows the commit and build time of the running container. The same commit is shown in the app footer.
-- `docker logs sprintboard` shows nginx access and error logs.
-- `docker inspect --format '{{.State.Health.Status}}' sprintboard` shows container health.
-- Problems found by users go in a GitHub issue using the **Feedback or bug** template; turn them into user stories in the backlog and the cycle starts again.
-
-## Honest limits of this mini project
-
-- Everything runs on the free GitHub-hosted runner; nothing was run against a real server while building this, so test the deploy job once with your own VM.
-- App data lives in each visitor's browser (localStorage), so there is no database to back up or monitor. A Flask + database version would add stages worth testing and monitoring.
+- `GET /health` returns `ok` and is used by the deployment smoke test.
+- `GET /version.json` shows the running image's commit and build time.
+- Use the Render dashboard's logs and service health to show runtime monitoring.
+- Record issues in GitHub using the feedback issue template, then add them to the Sprintboard backlog.
