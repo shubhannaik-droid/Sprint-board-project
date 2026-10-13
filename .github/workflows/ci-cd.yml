@@ -89,7 +89,7 @@ jobs:
       contents: read
     env:
       RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-      APP_URL: https://sprint-board-project.onrender.com
+      APP_URL: https://CHANGE-ME-TO-YOUR-NEW-SERVICE.onrender.com
     steps:
       - name: Check deploy hook secret
         run: |
@@ -98,11 +98,12 @@ jobs:
             exit 1
           fi
 
-      - name: Trigger Render deployment for this commit
+      - name: Deploy the image built by this workflow
         run: |
-          echo "Triggering Render deployment for commit ${GITHUB_SHA::7}"
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}:sha-${GITHUB_SHA::7}"
+          echo "Triggering Render deployment for $IMAGE"
           curl --fail-with-body --show-error --silent --get \
-            --data-urlencode "ref=$GITHUB_SHA" \
+            --data-urlencode "imgURL=$IMAGE" \
             "$RENDER_DEPLOY_HOOK"
           echo
 
